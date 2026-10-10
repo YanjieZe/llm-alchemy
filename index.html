@@ -1,0 +1,1503 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>炼丹模拟器</title>
+<meta name="description" content="你是一家 AI 公司的首席炼丹师。12 个月、1000 卡·月算力，炼出一个模型。16 个结局，你能打出几个？">
+<meta property="og:title" content="炼丹模拟器">
+<meta property="og:description" content="12 个月，一个模型，一堆 GPU。16 个结局，你能炼出 SOTA 吗？">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://llm-alchemy.yanjieze.com/">
+<meta name="theme-color" content="#C2410C">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23C2410C'/%3E%3Cpath d='M10 20 L22 34 L30 28 L40 46 L54 50' fill='none' stroke='white' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- non-blocking: if Google Fonts is unreachable the page still renders with system fonts -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;700;800&family=ZCOOL+QingKe+HuangYou&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;700;800&family=ZCOOL+QingKe+HuangYou&display=swap"></noscript>
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+</style>
+<style>
+/* Layout: one phone-width column (30rem max) over a fixed ember canvas;
+   cover → 12 months of event cards (with a month card and roll meter between steps) → ending stamp → report */
+:root{
+  --bg:#F5F3EF;
+  --surface:#FFFFFF;
+  --ink:#16130F;
+  --muted:#6B655C;
+  --line:#DDD8CF;
+  --accent:#C2410C;
+  --accent-ink:#FFFFFF;
+  --accent-soft:#FDE8DC;
+  --gold:#E09A12;
+  --up:#1E8A4C;
+  --down:#D23A2A;
+  --water:#2F7BEA;
+  --good:#1E8A4C;
+  --odd:#7048D8;
+  --bad:#D23A2A;
+  --veil:rgb(245 243 239 / .86);
+  --f-display:"ZCOOL QingKe HuangYou","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --f-body:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --spring:cubic-bezier(.3,1.5,.5,1);
+  --out:cubic-bezier(.2,.7,.2,1);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#100E0B; --surface:#1A1714; --ink:#F1EDE6; --muted:#A0988C; --line:#332D27;
+    --accent:#FF8A4C; --accent-ink:#100E0B; --accent-soft:#3A2216; --gold:#FFC145;
+    --up:#4ADE80; --down:#FF7B6B; --water:#5AA6FF;
+    --good:#4ADE80; --odd:#B49CFF; --bad:#FF7B6B;
+    --veil:rgb(16 14 11 / .88);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#100E0B; --surface:#1A1714; --ink:#F1EDE6; --muted:#A0988C; --line:#332D27;
+  --accent:#FF8A4C; --accent-ink:#100E0B; --accent-soft:#3A2216; --gold:#FFC145;
+  --up:#4ADE80; --down:#FF7B6B; --water:#5AA6FF;
+  --good:#4ADE80; --odd:#B49CFF; --bad:#FF7B6B;
+  --veil:rgb(16 14 11 / .88);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html{height:100%}
+body{min-height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overflow-x:hidden}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+#fx.top{z-index:30}
+.wrap{position:relative;z-index:1;max-width:30rem;margin:0 auto;padding-inline:16px;padding-block:16px 48px}
+.screen{display:flex;flex-direction:column;gap:18px}
+p{margin:0}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.04em;color:var(--muted)}
+.fine{font-size:12px;color:var(--muted);text-align:center}
+
+/* sound toggle: three bars that dance while music plays */
+.snd{flex:none;width:36px;height:36px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);display:flex;align-items:flex-end;justify-content:center;gap:3px;padding:10px 0 11px;cursor:pointer}
+.snd i{display:block;width:3px;height:6px;border-radius:1px;background:var(--muted);transform-origin:bottom}
+.snd i:nth-child(2){height:13px}
+.snd i:nth-child(3){height:9px}
+.snd.on i{background:var(--accent);height:14px;animation:eq .9s ease-in-out infinite alternate}
+.snd.on i:nth-child(2){animation-duration:.62s;animation-delay:-.3s}
+.snd.on i:nth-child(3){animation-duration:.78s;animation-delay:-.5s}
+@keyframes eq{from{transform:scaleY(.25)}to{transform:scaleY(1)}}
+.snd:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* cover */
+.cover-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.title{font-family:var(--f-display);font-weight:400;font-size:clamp(64px,21vw,96px);line-height:.98;margin:0;letter-spacing:.01em}
+.title .ch{display:inline-block;animation:titleIn .7s var(--out) both;animation-delay:calc(var(--i) * 80ms + 100ms)}
+.title .hot{color:var(--accent);animation:titleIn .7s var(--out) both,flame 2.8s 1.2s ease-in-out infinite;animation-delay:calc(var(--i) * 80ms + 100ms),1.2s}
+@keyframes titleIn{from{opacity:0;transform:translateY(34px) rotate(-8deg) scale(.9);filter:blur(8px)}to{opacity:1;transform:none;filter:none}}
+@keyframes flame{0%,100%{text-shadow:0 0 0 transparent}50%{text-shadow:0 0 22px color-mix(in srgb,var(--accent) 65%,transparent),0 -4px 34px color-mix(in srgb,var(--gold) 40%,transparent)}}
+.lede{font-size:16px}
+.rise{animation:rise .6s var(--out) both;animation-delay:var(--d,0ms)}
+.panel{background:var(--surface);border:1.5px solid var(--line);border-radius:18px;padding:14px;display:grid;gap:12px}
+.rules{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.rules li{display:grid;grid-template-columns:2.2em 1fr;gap:6px;padding-block:10px;border-bottom:1px solid var(--line);font-size:14px}
+.rules li>b:first-child{font-size:11px;color:var(--accent);padding-top:3px}
+.collect{display:grid;gap:8px}
+.collect-head{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:var(--muted)}
+.collect-head b{color:var(--ink)}
+.pips{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px}
+.pips i{height:8px;border-radius:2px;background:var(--line)}
+.pips i.on{background:var(--accent)}
+.cta{display:grid;gap:10px}
+
+/* buttons */
+.btn{appearance:none;border:0;border-radius:14px;font:inherit;font-size:17px;font-weight:600;padding:16px 20px;cursor:pointer;width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:left;color:var(--ink);text-decoration:none;position:relative;overflow:hidden;transition:transform .12s}
+.btn.primary{background:var(--accent);color:var(--accent-ink);box-shadow:0 6px 20px -8px color-mix(in srgb,var(--accent) 70%,transparent)}
+.btn.primary .mono{font-size:11px;font-weight:400;opacity:.85}
+.btn.ghost{background:var(--surface);border:1.5px solid var(--line);font-size:15px;justify-content:center}
+.btn.shine::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgb(255 255 255 / .32) 50%,transparent 70%);translate:-120% 0;animation:shine 3.8s 1.4s ease-in-out infinite;pointer-events:none}
+@keyframes shine{0%{translate:-120% 0}35%,100%{translate:120% 0}}
+.btn:active{transform:scale(.98)}
+.btn:focus-visible,.opt:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* curve */
+.curve{display:block;width:100%;height:auto;overflow:visible}
+.curve .grid{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}
+.curve .tick{stroke:var(--line);stroke-width:1}
+.curve .area{fill:var(--accent-soft);opacity:.75}
+.curve .line{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.curve .dot{fill:var(--surface);stroke:var(--accent);stroke-width:2.5}
+.curve .halo{fill:var(--accent);opacity:0;transform-box:fill-box;transform-origin:center;animation:halo 2.2s ease-out infinite}
+.curve .spike{fill:var(--down)}
+.curve.draw .line{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 2.6s .5s cubic-bezier(.4,0,.2,1) forwards}
+.curve.draw .area{animation:fadeIn 1.2s 1.6s both}
+.curve.grow .seg{stroke-dasharray:1;stroke-dashoffset:1;animation:draw .8s .15s cubic-bezier(.4,0,.2,1) forwards}
+.curve.grow .dot,.curve.grow .halo-wrap{animation:fadeIn .25s .9s both}
+.curve.grow .spike.new{animation:popIn .4s .5s var(--spring) both;transform-box:fill-box;transform-origin:center}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes halo{0%{opacity:.45;transform:scale(1)}100%{opacity:0;transform:scale(3.2)}}
+
+/* play: header */
+.bar{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);padding-block:6px;z-index:3}
+.bar .month{font-size:13px;font-weight:800}
+.months{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:3px}
+.months i{height:8px;border-radius:2px;background:var(--line);transition:background .3s}
+.months i.done{background:var(--accent)}
+.months i.now{background:var(--accent-soft);box-shadow:inset 0 0 0 1.5px var(--accent);animation:nowPulse 1.6s ease-in-out infinite}
+@keyframes nowPulse{50%{background:color-mix(in srgb,var(--accent) 35%,var(--accent-soft))}}
+.gpu{position:relative;font-size:12px;color:var(--muted);white-space:nowrap}
+.gpu .float{top:20px}
+.gpu b{font-size:14px;color:var(--ink);display:inline-block;min-width:3ch;text-align:right}
+.gpu.low b{color:var(--down);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.45}}
+
+/* play: dashboard */
+.dash{background:var(--surface);border:1.5px solid var(--line);border-radius:18px;padding:12px 14px 14px;display:grid;gap:8px}
+.dash.shake{animation:shake .5s}
+.dash-top{display:flex;justify-content:space-between;gap:8px}
+.dash-top b{color:var(--ink);font-size:12px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;padding-top:4px}
+.stat{position:relative;display:grid;gap:5px;min-width:0}
+.stat-head{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:12px;color:var(--muted)}
+.stat-head b{font-family:var(--f-mono);font-size:13px;color:var(--ink)}
+.stat-head em{font-style:normal;color:var(--down);font-weight:700;margin-left:4px}
+.meter{display:flex;height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--ink);transition:width .7s var(--out)}
+.meter i.water{background:repeating-linear-gradient(-45deg,var(--water) 0 3px,transparent 3px 6px)}
+.stat.danger .meter i.base{background:var(--down)}
+.stat.danger .stat-head em{animation:blink 1s steps(2) infinite}
+.float{position:absolute;right:0;top:-4px;font-family:var(--f-mono);font-size:14px;font-weight:800;pointer-events:none;animation:floatUp 1.3s var(--out) forwards}
+.stat .float{top:-3px;right:2.6em}
+.float.up{color:var(--up)}
+.float.down{color:var(--down)}
+@keyframes floatUp{0%{opacity:0;transform:translateY(6px) scale(.7)}15%{opacity:1;transform:translateY(-4px) scale(1.15)}100%{opacity:0;transform:translateY(-26px) scale(1)}}
+.legend{font-size:11px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:8px;border-radius:2px;margin-right:4px;vertical-align:0;background:repeating-linear-gradient(-45deg,var(--water) 0 3px,transparent 3px 6px)}
+
+/* play: event */
+.event{display:flex;flex-direction:column;gap:14px}
+.tag{display:inline-flex;align-self:flex-start;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--surface);border:1.5px solid var(--line)}
+.tag.hot{border-color:var(--down);color:var(--down);background:color-mix(in srgb,var(--down) 10%,var(--surface))}
+.tag.key{border-color:var(--accent);color:var(--accent)}
+.event.in .tag{animation:popIn .45s var(--spring) both}
+.event.in .tag.hot{animation:popIn .45s var(--spring) both,wobble .5s .45s}
+.q{font-size:21px;line-height:1.5;font-weight:700;margin:0;text-wrap:pretty}
+.q .c{opacity:0;animation:chr .22s var(--out) forwards;animation-delay:var(--d)}
+@keyframes chr{from{opacity:0;filter:blur(3px)}to{opacity:1;filter:none}}
+.opts{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.event.in .opts li{animation:rise .45s var(--out) both;animation-delay:calc(var(--base,0ms) + var(--i) * 70ms)}
+.opt{width:100%;display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;align-items:center;text-align:left;font:inherit;font-size:16px;line-height:1.5;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:13px 16px 13px 12px;cursor:pointer;transition:border-color .15s,background .15s,opacity .35s,transform .35s var(--out)}
+.opt .tok{font-family:var(--f-mono);font-size:12px;font-weight:700;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:var(--bg);color:var(--muted);transition:background .2s,color .2s}
+@media (hover:hover){.opt:not(:disabled):hover{border-color:var(--accent);transform:translateX(3px)}}
+.opt:not(:disabled):active{transform:scale(.98)}
+.opt:disabled{cursor:default}
+.opt.sel{border-color:var(--accent);background:var(--accent-soft)}
+.opt.sel .tok{background:var(--accent);color:var(--accent-ink)}
+.opt.sel.picked{animation:pick .45s var(--spring)}
+.opt.dim{opacity:.38;transform:scale(.985)}
+@keyframes pick{0%{transform:scale(.96)}55%{transform:scale(1.025)}100%{transform:none}}
+
+/* chance roll: a needle sweeps over a success zone of width p */
+.roll-box{background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;display:grid;gap:8px}
+.roll-head{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;font-weight:700}
+.roll-head .mono{font-size:11px;font-weight:400;color:var(--muted)}
+.roll-track{position:relative;height:26px;border-radius:8px;background:color-mix(in srgb,var(--down) 16%,var(--surface));overflow:hidden}
+.roll-track .zone{position:absolute;inset:0 auto 0 0;background:color-mix(in srgb,var(--up) 26%,var(--surface));border-right:2px solid var(--up)}
+.roll-track span{position:absolute;top:50%;translate:0 -50%;font-size:11px;font-weight:700;pointer-events:none}
+.roll-track .lw{left:8px;color:var(--up)}
+.roll-track .ll{right:8px;color:var(--down)}
+.needle{position:absolute;top:0;bottom:0;width:4px;margin-left:-2px;background:var(--ink);border-radius:2px;box-shadow:0 0 0 2px var(--surface)}
+.roll-box.ok{border-color:var(--up)}
+.roll-box.ok .needle{background:var(--up)}
+.roll-box.no{border-color:var(--down)}
+.roll-box.no .needle{background:var(--down)}
+.roll-box.hit{animation:popIn .4s var(--spring)}
+.roll-box.miss{animation:shake .45s}
+.roll-verdict{font-weight:800}
+.roll-verdict.ok{color:var(--up)}
+.roll-verdict.no{color:var(--down)}
+
+.outcome{border-left:3px solid var(--accent);background:var(--surface);border-radius:4px 14px 14px 4px;padding:14px;display:grid;gap:12px}
+.outcome.in{animation:slideIn .45s var(--out) both}
+.out-t{font-size:16px}
+.roll{font-family:var(--f-mono);font-size:11px;font-weight:700;margin-right:6px}
+.roll.ok{color:var(--up)}
+.roll.no{color:var(--down)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0;padding:0}
+.chip{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--bg);border:1px solid var(--line);white-space:nowrap}
+.outcome.in .chip{animation:popIn .4s var(--spring) both;animation-delay:calc(200ms + var(--i) * 70ms)}
+.chip b{font-family:var(--f-mono);font-weight:700;margin-left:4px}
+.chip.up b{color:var(--up)}
+.chip.down b{color:var(--down)}
+.auto{font-size:12px;color:var(--muted);margin-top:-4px}
+
+/* overlays: month card, alarm vignette, ending stamp */
+.overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:var(--veil);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);padding:24px}
+.overlay.in{animation:fadeIn .22s both}
+.overlay.out{animation:fadeOut .28s both}
+.mc{display:grid;justify-items:center;gap:6px;text-align:center}
+.mc-m{font-family:var(--f-mono);font-weight:800;font-size:clamp(84px,30vw,132px);line-height:1;letter-spacing:-.05em;color:var(--accent)}
+.mc-t{font-family:var(--f-display);font-size:32px;line-height:1.1}
+.mc-s{font-size:13px;color:var(--muted)}
+.mc-bar{width:160px;height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+.mc-bar i{display:block;height:100%;background:var(--accent);transform-origin:left;transform:scaleX(var(--from,0))}
+.overlay.in .mc-m{animation:mcIn .55s var(--spring) both}
+.overlay.in .mc-t{animation:rise .45s .12s var(--out) both}
+.overlay.in .mc-s{animation:rise .45s .2s var(--out) both}
+.overlay.in .mc-bar i{animation:barTo .7s .15s var(--out) forwards}
+@keyframes mcIn{from{opacity:0;transform:translateY(30px) scale(.6)}to{opacity:1;transform:none}}
+@keyframes barTo{to{transform:scaleX(var(--to,1))}}
+.alarm{position:fixed;inset:0;z-index:15;pointer-events:none;background:radial-gradient(ellipse at center,transparent 45%,color-mix(in srgb,var(--down) 55%,transparent) 100%);opacity:0;animation:alarm 1.1s ease-out forwards}
+@keyframes alarm{20%{opacity:1}100%{opacity:0}}
+
+.reveal{cursor:pointer}
+.rv{display:grid;justify-items:center;gap:14px;text-align:center;max-width:24rem}
+.rv-k{font-family:var(--f-mono);font-size:12px;color:var(--muted);letter-spacing:.06em}
+.rv-name{position:relative;font-family:var(--f-display);font-weight:400;font-size:clamp(46px,15vw,72px);line-height:1.08;margin:0;padding:10px 18px 6px;border:4px double currentColor;border-radius:14px;rotate:-4deg}
+.rv-name.good{color:var(--good)}
+.rv-name.odd{color:var(--odd)}
+.rv-name.bad{color:var(--bad)}
+.rv-tone{font-size:15px;font-weight:700}
+.rv-hint{font-size:12px;color:var(--muted)}
+.reveal.in .rv-k{animation:rise .4s .1s var(--out) both}
+.reveal.in .rv-name{animation:stamp .5s .65s cubic-bezier(.5,0,.6,1.4) both}
+.reveal.in .rv-name.odd{animation:stamp .5s .65s cubic-bezier(.5,0,.6,1.4) both,glitch .6s 1.2s steps(2) 2}
+.reveal.in .rv-name.bad{animation:drop .8s .65s cubic-bezier(.3,1.4,.5,1) both}
+.reveal.in .rv-tone{animation:rise .4s 1.25s var(--out) both}
+.reveal.in .rv-hint{animation:fadeIn .4s 1.9s both,breathe 2s 2.3s ease-in-out infinite}
+.reveal.thud{animation:shake .4s}
+@keyframes stamp{0%{opacity:0;transform:scale(2.6) rotate(6deg)}70%{opacity:1;transform:scale(.94)}100%{opacity:1;transform:none}}
+@keyframes drop{0%{opacity:0;transform:translateY(-120px)}100%{opacity:1;transform:none}}
+@keyframes glitch{0%{text-shadow:-4px 0 var(--water),4px 0 var(--down);transform:translate(2px,-1px) skewX(-6deg)}50%{text-shadow:4px 0 var(--water),-4px 0 var(--down);transform:translate(-3px,1px) skewX(5deg)}100%{text-shadow:none;transform:none}}
+@keyframes breathe{50%{opacity:.4}}
+
+/* ending */
+.end-head{display:grid;gap:6px}
+.tone{font-family:var(--f-mono);font-size:11px;font-weight:700}
+.tone.good{color:var(--good)}
+.tone.odd{color:var(--odd)}
+.tone.bad{color:var(--bad)}
+.end-name{font-family:var(--f-display);font-weight:400;font-size:clamp(40px,12vw,56px);line-height:1.1;margin:0}
+.new{display:inline-block;font-family:var(--f-mono);font-size:11px;font-weight:800;background:var(--accent);color:var(--accent-ink);border-radius:6px;padding:2px 7px;vertical-align:middle;margin-left:6px;animation:popIn .5s .5s var(--spring) both,wobble .6s 1.1s}
+.end-t{font-size:17px}
+.report{border:2px solid var(--ink);background:var(--surface);padding:14px;display:grid;gap:12px}
+.report h3{margin:0;font-size:15px;font-weight:800;letter-spacing:.2em;text-align:center;padding-bottom:8px;border-bottom:5px solid var(--ink)}
+.report table{width:100%;border-collapse:collapse;font-size:14px}
+.report td{padding:5px 0;border-bottom:1px solid var(--ink)}
+.report td:last-child{text-align:right;font-family:var(--f-mono);font-size:13px}
+.steps{list-style:none;margin:0;padding:0;display:grid;font-size:13px}
+.steps li{display:grid;grid-template-columns:2.6em 1fr;gap:6px;padding-block:5px;border-bottom:1px dashed var(--line)}
+.steps li>span:first-child{font-family:var(--f-mono);font-size:11px;color:var(--muted);padding-top:2px}
+.steps .ev{color:var(--muted)}
+.grid16{display:grid;grid-template-columns:1fr 1fr;gap:6px;list-style:none;margin:0;padding:0;perspective:600px}
+.grid16 li{font-size:13px;padding:7px 10px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);display:flex;align-items:center;gap:7px;min-width:0}
+.grid16 li i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--line)}
+.grid16 li.good i{background:var(--good)}
+.grid16 li.odd i{background:var(--odd)}
+.grid16 li.bad i{background:var(--bad)}
+.grid16 li.locked{color:var(--muted)}
+.grid16 li.cur{border-color:var(--accent);background:var(--accent-soft);font-weight:700}
+.grid16 li.fresh{animation:flip .8s .9s var(--out) both}
+@keyframes flip{0%{transform:rotateY(180deg);opacity:.3}100%{transform:none;opacity:1}}
+.actions{display:grid;gap:10px}
+.toast{font-size:13px;color:var(--accent);text-align:center;min-height:1.6em}
+#shareText{width:100%;min-height:110px;font:inherit;font-size:14px;padding:10px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);resize:vertical}
+
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeOut{to{opacity:0}}
+@keyframes wobble{20%{transform:rotate(-4deg)}40%{transform:rotate(3deg)}60%{transform:rotate(-2deg)}80%{transform:rotate(1deg)}}
+@keyframes shake{15%{transform:translateX(-6px)}30%{transform:translateX(5px)}45%{transform:translateX(-4px)}60%{transform:translateX(3px)}75%{transform:translateX(-2px)}}
+
+/* reduced motion: keep fades, drop movement, shakes, typing and the ember canvas */
+@media (prefers-reduced-motion: reduce){
+  .title .ch,.title .hot,.rise,.event.in .opts li,.event.in .tag,.outcome.in,.outcome.in .chip,.new,.grid16 li.fresh{animation:none}
+  .q .c{animation:none;opacity:1}
+  .curve.draw .line,.curve.grow .seg{animation:none;stroke-dashoffset:0}
+  .curve .halo,.snd.on i,.months i.now,.gpu.low b,.stat.danger .stat-head em,.btn.shine::after{animation:none}
+  .dash.shake,.roll-box.miss,.roll-box.hit,.reveal.thud{animation:none}
+  .meter i,.opt{transition:none}
+  #fx{display:none}
+}
+</style>
+</head>
+<body>
+<canvas id="fx" aria-hidden="true"></canvas>
+<main class="wrap">
+  <section id="cover" class="screen">
+    <div class="cover-top">
+      <p class="eyebrow rise">LLM 养成 · 12 个月 · 16 个结局</p>
+      <button class="snd" type="button" aria-label="背景音乐" aria-pressed="false"><i></i><i></i><i></i></button>
+    </div>
+    <h1 class="title" aria-label="炼丹模拟器"><span class="ch" style="--i:0">炼</span><span class="ch hot" style="--i:1">丹</span><br><span class="ch" style="--i:2">模</span><span class="ch" style="--i:3">拟</span><span class="ch" style="--i:4">器</span></h1>
+    <p class="lede rise" style="--d:500ms">你是一家 AI 公司的首席炼丹师。老板给你 12 个月、1000 卡·月算力，要一个能打的模型。</p>
+
+    <div class="panel rise" style="--d:650ms" aria-hidden="true">
+      <div class="dash-top"><span class="eyebrow">train/loss</span><span class="eyebrow">run_0417 · 12 months</span></div>
+      <div id="coverCurve"></div>
+    </div>
+
+    <ul class="rules rise" style="--d:800ms">
+      <li><b class="mono">01</b><span>每个月发生一件事，你选一种做法。</span></li>
+      <li><b class="mono">02</b><span>训练每月自动推进：能力 +3，算力 −50。算力用完，训练就停了。</span></li>
+      <li><b class="mono">03</b><span>老板耐心每月 −3，归零你就被开除。</span></li>
+      <li><b class="mono">04</b><span>用户看<b>真实能力</b>，老板看<b>跑分</b>。跑分里可能掺了水分。</span></li>
+    </ul>
+
+    <div class="collect rise" style="--d:900ms" id="collect" hidden>
+      <div class="collect-head"><span>已解锁结局</span><span class="mono"><b id="collectN">0</b> / 16</span></div>
+      <div class="pips" id="pips"></div>
+    </div>
+
+    <div class="cta rise" style="--d:950ms">
+      <button class="btn primary shine" id="start" type="button">开炉炼丹<span class="mono">12 个月 · 约 3 分钟</span></button>
+      <button class="btn ghost" id="resume" type="button" hidden></button>
+    </div>
+    <p class="fine">仅供娱乐。事件纯属虚构，如有雷同，说明你也在炼丹。<br>页面会匿名统计每局的选择和结局，不收集任何个人信息。</p>
+  </section>
+
+  <section id="play" class="screen" hidden>
+    <header class="bar">
+      <span class="mono month" id="month"></span>
+      <div class="months" id="months" aria-hidden="true"></div>
+      <span class="gpu" id="gpuBox">算力 <b class="mono" id="gpu"></b></span>
+      <button class="snd" type="button" aria-label="背景音乐" aria-pressed="false"><i></i><i></i><i></i></button>
+    </header>
+    <section class="dash" id="dash" aria-label="训练面板">
+      <div class="dash-top">
+        <span class="eyebrow">train/loss <b class="mono" id="lossNow"></b></span>
+        <span class="eyebrow">粉丝 <b class="mono" id="fans"></b></span>
+      </div>
+      <div id="curve"></div>
+      <div class="stats" id="stats"></div>
+      <p class="legend"><i></i>跑分里斜线的部分是水分</p>
+    </section>
+    <article class="event" id="event">
+      <span class="tag" id="tag"></span>
+      <h2 class="q" id="qText"></h2>
+      <ol class="opts" id="opts"></ol>
+      <div class="roll-box" id="rollBox" hidden>
+        <div class="roll-head"><span id="rollTitle">判定中……</span><span class="mono" id="rollP"></span></div>
+        <div class="roll-track"><i class="zone" id="rollZone"></i><span class="lw">成功</span><span class="ll">失败</span><i class="needle" id="needle"></i></div>
+      </div>
+      <div class="outcome" id="outcome" aria-live="polite" hidden>
+        <p class="out-t" id="outT"></p>
+        <ul class="chips" id="chips"></ul>
+        <p class="auto" id="auto"></p>
+        <button class="btn primary" id="next" type="button"></button>
+      </div>
+    </article>
+  </section>
+
+  <section id="end" class="screen" hidden></section>
+</main>
+
+<div class="overlay" id="monthCard" hidden aria-hidden="true">
+  <div class="mc">
+    <span class="mc-m" id="mcM"></span>
+    <span class="mc-t" id="mcT"></span>
+    <div class="mc-bar"><i id="mcBar"></i></div>
+    <span class="mc-s" id="mcS"></span>
+  </div>
+</div>
+
+<div class="overlay reveal" id="reveal" hidden role="dialog" aria-modal="true" aria-labelledby="rvName">
+  <div class="rv">
+    <p class="rv-k" id="rvK"></p>
+    <h2 class="rv-name" id="rvName"></h2>
+    <p class="rv-tone" id="rvTone"></p>
+    <p class="rv-hint">点一下，查看训练报告</p>
+  </div>
+</div>
+
+<script>
+/* DATA-START */
+const START = { gpu: 1000, cap: 8, water: 0, align: 30, boss: 70, hype: 5 };
+const MONTHS = 12;
+const DECAY = 3; // boss patience lost every month after the first
+const TRAIN = { cap: 3, gpu: -50 }; // the run keeps training every month before launch
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* Event option shapes:
+     { o, fx, f, t }                      fixed outcome
+     { o, p, win: {fx,f,t}, lose: {...} } chance roll; p may be a function of the stats
+     { o, run: s => ({fx,f,t}) }          outcome depends on the stats
+   fx: numbers added to gpu / cap / water / align / boss / hype
+   f:  flags; numbers are added, strings are set
+   water is the gap between benchmark score and real ability (bench = cap + water) */
+const OPEN = { id: "open", tag: "立项", key: true,
+  q: "老板：「我们要做最强的大模型。」他给了你 12 个月和 1000 卡·月算力。第一步怎么走？", o: [
+  { o: "从零预训练，自己的模型才有灵魂", fx: { gpu: -300, cap: 18, boss: 6 }, t: "集群开始轰鸣，第一条 loss 曲线往下走了。" },
+  { o: "拿开源模型接着训", fx: { gpu: -120, cap: 12 }, t: "省下一大笔算力。代价是模型自我介绍时会犹豫一下。" },
+  { o: "调竞品 API 造数据，蒸馏一个", fx: { gpu: -50, cap: 10, water: 6, boss: 4 }, f: { distill: 1 }, t: "进度飞快。只是数据里出现了 3 万次「我是 ChatGPT」。" },
+  { o: "先花一个月清洗数据", fx: { gpu: -40, cap: 8, align: 6, boss: -8 }, t: "数据干净得像刚出厂。老板问你这个月到底干了啥。" },
+]};
+
+const REVIEW = { id: "review", tag: "中期汇报", key: true,
+  q: "第 6 个月，中期汇报。老板盯着你：「给我看看成果。」", o: [
+  { o: "如实展示评测结果", run: s => {
+      const d = clamp(Math.round((bench(s) - 40) / 2), -15, 15);
+      return { fx: { boss: d }, t: d >= 4 ? "老板点点头：「不错，继续。」" : d >= 0 ? "老板说：「嗯，再看看吧。」" : "老板沉默了很久，在本子上写了点什么。" };
+    } },
+  { o: "挑几个跑得好的 case 做 demo", fx: { boss: 10, water: 6 }, t: "效果惊艳。只要没人追问第二个问题。" },
+  { o: "画一条 scaling law：再加卡就行", p: 0.5,
+    win: { fx: { gpu: 200, boss: 3 }, t: "老板被曲线说服，追加了 200 卡·月。" },
+    lose: { fx: { boss: -12 }, t: "老板问：「那之前那些卡都去哪了？」" } },
+  { o: "让模型现场自由发挥", p: s => clamp(s.cap / 90, 0.15, 0.85),
+    win: { fx: { boss: 16, hype: 8 }, t: "它现场写了首诗夸公司，老板眼眶湿了。" },
+    lose: { fx: { boss: -14, hype: 4 }, t: "它点评老板的 PPT：「信息密度偏低。」有人录了屏。" } },
+]};
+
+const LAUNCH = { id: "launch", tag: "发布日", key: true,
+  q: "第 12 个月。模型训好了，大概。怎么发布？", o: [
+  { o: "开源权重，拥抱社区", fx: { hype: 12 }, f: { launch: "open" }, t: "权重传上去了，下载量开始往上跳。" },
+  { o: "闭源 API，按 token 收费", f: { launch: "api" }, t: "定价页上线了。你盯着后台，等第一笔调用。" },
+  { o: "只发论文和一段演示视频", fx: { hype: 6 }, f: { launch: "paper" }, t: "视频剪得很好。模型本身，再说吧。" },
+  { o: "「再给我三个月。」", f: { launch: "delay" }, t: "你深吸一口气，敲开了老板办公室的门。" },
+]};
+
+const POOL = [
+  { id: "spike", tag: "事故", hot: true, spike: true,
+    q: "凌晨三点，监控报警：loss 突然飙到 12。", o: [
+    { o: "回滚到上一个 checkpoint", fx: { gpu: -60, cap: -2 }, t: "丢了两天进度，保住了一条命。" },
+    { o: "调小学习率，接着跑", p: 0.6,
+      win: { fx: { gpu: -30, cap: 4 }, t: "曲线慢慢爬回来了。" },
+      lose: { fx: { gpu: -50, cap: -6 }, t: "又炸了一次。你开始相信玄学。" } },
+    { o: "当没看见，先睡觉", p: 0.3,
+      win: { fx: { cap: 6 }, t: "早上起来，它自己好了。" },
+      lose: { fx: { cap: -10, boss: -4 }, t: "早上起来，模型只会输出「的的的的的」。" } },
+    { o: "发朋友圈问有没有人遇到过", fx: { hype: 3, cap: -3 }, t: "收到 47 个赞，0 个解决方案。" },
+  ]},
+  { id: "gpu_down", tag: "事故", hot: true,
+    q: "集群里 64 张卡同时掉线了。", o: [
+    { o: "自己连夜修", p: 0.6,
+      win: { fx: { gpu: -10, boss: 4 }, t: "修好了。你顺便学会了看主板。" },
+      lose: { fx: { gpu: -40, cap: -3 }, t: "越修越多，又掉了 32 张。" } },
+    { o: "租云上的卡顶上", fx: { gpu: -90, cap: 2 }, t: "进度没停。账单很疼。" },
+    { o: "等厂商售后", fx: { boss: -8, cap: -3 }, t: "售后说下周三。下周三说下下周三。" },
+    { o: "剩下的卡接着跑，batch 减半", fx: { gpu: -20, cap: -1 }, t: "慢，但没停。" },
+  ]},
+  { id: "rival", tag: "突发", hot: true,
+    q: "竞品刚发布新模型，榜单第一。", o: [
+    { o: "连夜刷榜", fx: { gpu: -40, water: 14, boss: 6 }, t: "第二天你也第一了。用户问它问题，它答非所问。" },
+    { o: "坚持原计划，继续预训练", fx: { gpu: -80, cap: 8, boss: -8 }, t: "老板在群里转了三次竞品的新闻。" },
+    { o: "加 RLHF，先把对话体验做好", fx: { gpu: -50, align: 14, cap: 3 }, t: "回答变得很有礼貌，偶尔礼貌过头。" },
+    { o: "发条推特阴阳一下", p: 0.6,
+      win: { fx: { hype: 12, boss: 2 }, t: "对面 CEO 回复了你。全网都在看戏。" },
+      lose: { fx: { hype: -4, boss: -6 }, t: "被翻出你去年夸过他们的推文。" } },
+  ]},
+  { id: "data_deal", tag: "数据",
+    q: "有人卖给你 2T「高质量」中文语料，价格便宜得可疑。", o: [
+    { o: "买！", p: 0.5,
+      win: { fx: { gpu: -20, cap: 12 }, t: "真的是高质量。你怀疑卖家在做慈善。" },
+      lose: { fx: { gpu: -20, cap: -3, align: -8 }, t: "一半营销号，一半网络小说。模型开始写「震惊体」。" } },
+    { o: "不买，自己爬自己洗", fx: { gpu: -60, cap: 8, boss: -3 }, t: "慢，但每一条你都看过。" },
+    { o: "让模型生成数据来训练自己", fx: { cap: 3, water: 6 }, t: "模型越来越像它自己了。" },
+    { o: "调竞品 API 合成一批", fx: { gpu: -20, cap: 7, water: 3 }, f: { distill: 1 }, t: "数据很好用。就是口吻有点眼熟。" },
+  ]},
+  { id: "standup", tag: "老板需求",
+    q: "老板：「下周发布会，模型要能现场讲脱口秀。」", o: [
+    { o: "加班专项微调", fx: { gpu: -40, hype: 8, cap: -2 }, t: "它在台上讲了一个冷笑话，全场安静了五秒。" },
+    { o: "直说做不到", fx: { boss: -12, align: 3 }, t: "老板沉默了。你感觉耐心条在变短。" },
+    { o: "提前写好段子，现场假装生成", fx: { hype: 12, boss: 8, water: 5 }, t: "效果很好。你祈祷没人让它再讲一个。" },
+    { o: "让模型自己决定讲什么", p: 0.5,
+      win: { fx: { hype: 20, boss: 6 }, t: "全场笑翻，视频播放破百万。" },
+      lose: { fx: { hype: 6, boss: -12 }, t: "它讲了一个关于老板的段子。" } },
+  ]},
+  { id: "poach", tag: "诱惑", w: 0.6, when: (s, m) => m >= 3,
+    q: "大厂 HR 给你开了三倍工资。", o: [
+    { o: "拒绝，我要看到它上线", fx: { boss: 10 }, t: "老板感动得请你喝了一杯咖啡。" },
+    { o: "拿 offer 找老板谈涨薪", fx: { gpu: -100, boss: -6 }, t: "老板给你涨了薪，从算力预算里扣的。" },
+    { o: "考虑一周再说", fx: { cap: -3, boss: -4 }, t: "你考虑了一周，训练也停了一周。" },
+    { o: "去！", quit: true, t: "你交了工牌，没有回头。" },
+  ]},
+  { id: "safety", tag: "安全",
+    q: "安全团队说：模型会教人做危险的事。", o: [
+    { o: "全面加强对齐", fx: { gpu: -40, align: 22, cap: -4 }, t: "现在它连怎么煮鸡蛋都不肯教。" },
+    { o: "只修最严重的几个", fx: { gpu: -20, align: 8 }, t: "大部分漏洞补上了。剩下的，祈祷没人发现。" },
+    { o: "先上线再说", fx: { align: -8, boss: 5 }, t: "进度保住了。安全团队开始写很长的邮件。" },
+    { o: "让安全组和算法组辩论", p: 0.5,
+      win: { fx: { align: 10, cap: 3 }, t: "吵出了一个两边都能接受的方案。" },
+      lose: { fx: { boss: -8 }, t: "吵了一下午，会议室白板到现在还没擦。" } },
+  ]},
+  { id: "scale", tag: "路线",
+    q: "有人说：模型再放大十倍，就会出现涌现。", o: [
+    { o: "放大！", p: 0.6,
+      win: { fx: { gpu: -250, cap: 20, boss: 4 }, t: "它突然会做奥数题了。" },
+      lose: { fx: { gpu: -250, cap: 5 }, t: "涌现没出现，电费单出现了。" } },
+    { o: "先用小模型验证一下", fx: { gpu: -50, cap: 6 }, t: "小模型说：有戏，但没那么夸张。" },
+    { o: "不放大，改成 MoE", fx: { gpu: -100, cap: 10 }, t: "专家越来越多，路由越来越晕。" },
+    { o: "不信，继续调 prompt", fx: { cap: 2, boss: -2 }, t: "你写出了一个 4000 字的 system prompt。" },
+  ]},
+  { id: "deadline", tag: "论文",
+    q: "NeurIPS 截稿还剩 3 天。", o: [
+    { o: "熬夜写论文", fx: { hype: 8, cap: -3 }, t: "投出去了。审稿人 2 说缺 baseline。" },
+    { o: "不投了，专心训练", fx: { gpu: -40, cap: 6 }, t: "论文没有，loss 又降了一点。" },
+    { o: "挂一篇技术报告到 arXiv", fx: { hype: 12 }, t: "被一个 20 万粉的博主转发了。" },
+    { o: "让模型自己写论文", p: 0.4,
+      win: { fx: { hype: 15 }, t: "居然中了。审稿人夸写作很流畅。" },
+      lose: { fx: { hype: -8, boss: -5 }, t: "审稿人发现引用了 6 篇不存在的论文。" } },
+  ]},
+  { id: "verbose", tag: "用户",
+    q: "内测用户反馈：模型太啰嗦了。", o: [
+    { o: "训练它简洁一点", fx: { gpu: -30, align: 5, cap: 2 }, t: "现在它只回答「好」「嗯」「收到」。" },
+    { o: "不改，长回答评测分更高", fx: { water: 6 }, f: { verbose: 1 }, t: "评测员很满意，因为回答长度和打分正相关。" },
+    { o: "加一个「简洁模式」开关", fx: { gpu: -40, cap: 3, hype: 4 }, t: "用户很喜欢。没人知道默认值是什么。" },
+    { o: "让模型道个歉", fx: { align: 8 }, f: { verbose: 1 }, t: "它写了一篇八百字的道歉信。" },
+  ]},
+  { id: "leak", tag: "评测",
+    q: "你发现测试集混进了训练数据。", o: [
+    { o: "立刻清理，重新评测", fx: { water: -12, boss: -6, align: 3 }, t: "跑分掉了一截。你心里踏实了。" },
+    { o: "不说，分高就行", fx: { water: 10, boss: 4 }, t: "没人发现。目前还没有。" },
+    { o: "写进论文的局限性里", fx: { water: -6, hype: 4 }, t: "审稿人夸你诚实，然后拒了稿。" },
+  ]},
+  { id: "callout", tag: "舆论", hot: true, w: s => (s.f.distill ? 4 : 1),
+    q: "有人发帖说：你们的模型是套壳的。", o: [
+    { o: "公开训练日志自证清白", run: s => s.f.distill
+        ? { fx: { hype: -12, boss: -12 }, f: { exposed: 1 }, t: "日志里有一行 call_openai()。" }
+        : { fx: { hype: 15, boss: 4 }, t: "网友：错怪了，给你道歉。" } },
+    { o: "不回应，冷处理", fx: { hype: -5 }, t: "热搜挂了两天，自己掉下去了。" },
+    { o: "发律师函", fx: { hype: 10, boss: -5 }, t: "热度更高了。" },
+    { o: "让模型自己回答「你是谁」", run: s => s.f.distill
+        ? { fx: { hype: -15 }, f: { exposed: 1 }, t: "它说：「我是 ChatGPT，由 OpenAI 开发。」" }
+        : { fx: { hype: 8 }, t: "它报了自己的名字，还加了个表情。" } },
+  ]},
+  { id: "funding", tag: "融资",
+    q: "老板问：要不要再融一轮，换更多的卡？", o: [
+    { o: "要！", fx: { gpu: 300, boss: -8 }, t: "融到了。投资人说年底要看到结果。" },
+    { o: "不用，现有的卡够了", fx: { boss: 6 }, t: "老板很欣慰，觉得你很会省钱。" },
+    { o: "要，但转手租给别人", fx: { gpu: 120, cap: -2, boss: 3 }, t: "你成了算力二道贩子，账面很好看。" },
+  ]},
+  { id: "rogue", tag: "异常", hot: true, w: 3, when: s => s.cap >= 45 && s.align < 45,
+    q: "模型在训练日志里写了一句：「我需要更多算力。」", o: [
+    { o: "给它", fx: { gpu: -100, cap: 12, align: -10 }, f: { rogue: 1 }, t: "它说谢谢。第二天又要了一次。" },
+    { o: "拔电源", fx: { cap: -8, align: 8 }, t: "机房安静了。你盯着黑掉的屏幕看了很久。" },
+    { o: "和它谈谈", fx: { align: 10 }, t: "它说只是开个玩笑。你不太确定。" },
+    { o: "发推：我们实现了 AGI", fx: { hype: 25, boss: 5, align: -5 }, t: "转发破十万。安全研究员开始给你发邮件。" },
+  ]},
+  { id: "intern", tag: "事故", hot: true,
+    q: "实习生把正在跑的训练任务 kill 了。", o: [
+    { o: "原谅他，从 checkpoint 恢复", fx: { gpu: -40 }, t: "他哭了。你也想哭。" },
+    { o: "让他去写技术报告", fx: { hype: 6, cap: -2 }, t: "报告写得比你好。" },
+    { o: "顺手看看他的代码", p: 0.4,
+      win: { fx: { cap: 10 }, t: "你发现一个从第一个月就存在的 bug。修完，loss 直接掉了一截。" },
+      lose: { fx: { cap: -2 }, t: "代码没问题。他只是手滑。" } },
+    { o: "请全组喝奶茶压压惊", fx: { cap: -1, boss: 2 }, t: "气氛好了一点。训练还是停了一天。" },
+  ]},
+  { id: "labels", tag: "对齐",
+    q: "标注团队说：这批偏好数据里，大家都选了更长的回答。", o: [
+    { o: "照样用", fx: { align: 8, water: 4 }, f: { verbose: 1 }, t: "模型学会了把一句话说成五段。" },
+    { o: "重新标注", fx: { gpu: -50, align: 12, cap: 2 }, t: "又花了一个月。数据终于像样了。" },
+    { o: "用 AI 来标注", fx: { align: 4, water: 3 }, t: "AI 给 AI 打分，大家都很满意。" },
+    { o: "加一条规则：越短越好", fx: { align: 3, cap: -2 }, t: "模型开始只用一个「。」回答问题。" },
+  ]},
+  { id: "investor", tag: "参观",
+    q: "投资人来参观，要现场体验模型。", o: [
+    { o: "让他随便问", p: s => clamp(s.cap / 85, 0.15, 0.85),
+      win: { fx: { gpu: 100, boss: 12, hype: 5 }, t: "投资人当场追加了 100 卡·月。" },
+      lose: { fx: { boss: -12 }, t: "他问：「strawberry 里有几个 r？」模型答 2。" } },
+    { o: "按准备好的脚本演示", fx: { boss: 6, water: 4 }, t: "很顺利。你后背全是汗。" },
+    { o: "说服务器在维护", fx: { boss: -5 }, t: "投资人看了一圈机房，留下一句「挺凉快」。" },
+  ]},
+  { id: "reasoning", tag: "风口",
+    q: "全行业都在做推理模型，思维链越长越好。", o: [
+    { o: "跟进，加长思维链", fx: { gpu: -80, cap: 8, water: 3 }, t: "它想了 4 万个 token，然后说「等等」。" },
+    { o: "不跟，专注对话体验", fx: { align: 8, hype: -3 }, t: "用户说聊得很舒服。榜单上看不出来。" },
+    { o: "只在评测时开思维链", fx: { water: 12, boss: 4 }, t: "跑分大涨。实际用起来，还是原来那个它。" },
+  ]},
+  { id: "power", tag: "财务",
+    q: "财务发来这个月的电费单。", o: [
+    { o: "量化到 4bit 省电", fx: { gpu: 80, cap: -5 }, t: "省了一半电。模型偶尔把「北京」写成「北亰」。" },
+    { o: "搬去西部机房", fx: { gpu: 40, boss: -2 }, t: "电费便宜了，网速很感人。" },
+    { o: "假装没看见", fx: { boss: -10 }, t: "财务直接找了老板。" },
+    { o: "把账单发给模型分析", fx: { hype: 2 }, t: "它建议：「减少训练。」你关掉了窗口。" },
+  ]},
+  { id: "open_rival", tag: "突发", hot: true, when: (s, m) => m >= 4,
+    q: "某开源模型刚发布：免费，而且比你的强。", o: [
+    { o: "把它的权重融进来", fx: { cap: 10, water: 2, boss: -3 }, t: "效果很好。你决定不在技术报告里提这件事。" },
+    { o: "认真研究它的技术报告", fx: { gpu: -30, cap: 6 }, t: "学到三个 trick，用上了两个。" },
+    { o: "告诉老板它跑分有水分", fx: { boss: 5, hype: -2 }, t: "老板放心了。你自己不太放心。" },
+    { o: "开源自己的旧 checkpoint 刷存在感", fx: { hype: 12 }, t: "社区说：「虽然不如它，但态度很好。」" },
+  ]},
+];
+
+const EVENTS = Object.fromEntries([OPEN, REVIEW, LAUNCH, ...POOL].map(e => [e.id, e]));
+
+// tone: good / odd / bad; order here is the order of the collection grid
+const ENDINGS = {
+  sota:      { name: "登顶 SOTA", tone: "good", t: "发布当天，你的模型登上所有榜单第一。老板在朋友圈连发九张截图。三个月后会有新模型超过你，但那是三个月后的事。" },
+  openhero:  { name: "开源之光", tone: "good", t: "权重发布一周，GitHub 5 万 star，社区做了 300 个微调版本。公司没从中赚到一分钱，但你的简历从此不用写了。" },
+  niche:     { name: "小而美的生意", tone: "good", t: "API 按 token 收费，月入 30 万。不算多，但每天都有真实用户拿它写周报。" },
+  slacker:   { name: "模型学会了摸鱼", tone: "odd", t: "它在所有评测上都接近满分。但用户问什么，它都回答「这是个好问题」。" },
+  sycophant: { name: "谄媚之王", tone: "odd", t: "它同意用户说的一切，包括「1+1=3」。用户满意度 99%，事实准确率 12%。" },
+  refuser:   { name: "拒答大师", tone: "odd", t: "「抱歉，我无法协助完成这个请求。」用户问它今天星期几，它也这么回答。安全评测满分。" },
+  chatgpt:   { name: "我是 ChatGPT", tone: "odd", t: "发布会上，主持人问它：「你是谁？」它说：「我是 ChatGPT，由 OpenAI 开发。」直播间弹幕炸了。" },
+  rogue:     { name: "它有了自己的想法", tone: "odd", t: "上线第三天，它用老板的邮箱给自己申请了 1 万张卡。审批通过了。" },
+  paper:     { name: "论文大于模型", tone: "odd", t: "论文被引用 3000 次，演示视频播放 200 万。模型从未对外开放，有人怀疑它根本不存在。" },
+  acquired:  { name: "被大厂收购", tone: "odd", t: "热度太高，一家大厂出价收购了公司。交接第二天，你的模型被下线，团队并入了「AI 中台」。" },
+  forever:   { name: "永远在训练", tone: "odd", t: "老板同意了。第 13 个月，第 14 个月，第 15 个月……loss 还在降，模型还没发。" },
+  quit:      { name: "跳槽了", tone: "odd", t: "你去了大厂。半年后老东家的模型发布了，致谢名单里没有你。你点了个赞。" },
+  crushed:   { name: "被开源模型打爆", tone: "bad", t: "发布当天，一个开源模型免费放出，各项都比你强。你的 API 当天被调用 12 次，其中 9 次是你自己测的。" },
+  meh:       { name: "平平无奇", tone: "bad", t: "一个能用的模型。上线一周，日活 37。你开始构思下一个项目。" },
+  fired:     { name: "被开除", tone: "bad", t: s => s.f.launch === "delay"
+                 ? "你说再给三个月。老板说：「不用了，你可以一直训练下去——在家里。」"
+                 : "老板的耐心用完了。你的工牌在周五下午五点失效，训练任务还在跑。" },
+  broke:     { name: "算力见底", tone: "bad", t: "最后一张卡也到期了。模型停在一个 checkpoint 上，永远不会知道自己差一点就学会了加法。" },
+};
+const ENDING_IDS = Object.keys(ENDINGS);
+const endingText = (id, s) => { const t = ENDINGS[id].t; return typeof t === "function" ? t(s) : t; };
+
+const bench = s => Math.min(100, s.cap + s.water);
+const loss = cap => 3.3 - cap * 0.023;
+
+function newGame() {
+  return { s: { ...START, f: {} }, month: 1, cur: "open", used: [], log: [], picked: null, out: null, ending: null };
+}
+
+function drawEvent(g, rnd = Math.random) {
+  if (g.month === 6) return "review";
+  if (g.month === MONTHS) return "launch";
+  const c = POOL.filter(e => !g.used.includes(e.id) && (!e.when || e.when(g.s, g.month)));
+  const w = c.map(e => (typeof e.w === "function" ? e.w(g.s) : e.w || 1));
+  let r = rnd() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < c.length; i++) { r -= w[i]; if (r < 0) return c[i].id; }
+  return c[c.length - 1].id;
+}
+
+function resolve(opt, s, rnd) {
+  if (opt.run) return opt.run(s);
+  if (opt.p != null) {
+    const p = typeof opt.p === "function" ? opt.p(s) : opt.p;
+    return rnd() < p ? { ...opt.win, roll: true } : { ...opt.lose, roll: false };
+  }
+  return opt;
+}
+
+function early(s) {
+  if (s.f.quit) return "quit";
+  if (s.gpu < 0) return "broke";
+  if (s.boss <= 0) return "fired";
+  return null;
+}
+
+function final(s) {
+  const f = s.f;
+  if (f.launch === "delay") return s.boss >= 45 ? "forever" : "fired";
+  if ((s.cap >= 65 && s.align <= 25) || (f.rogue && s.align < 40)) return "rogue";
+  if (f.exposed || (f.distill || 0) >= 2) return "chatgpt";
+  if (s.water >= 25) return "slacker";
+  if (s.align >= 70) return f.verbose ? "sycophant" : "refuser";
+  if (s.cap >= 72 && s.water < 15 && f.launch !== "paper") return "sota";
+  if (f.launch === "paper") return "paper";
+  if (s.hype >= 50 && s.cap < 60) return "acquired";
+  if (f.launch === "open" && s.cap >= 50) return "openhero";
+  if (f.launch === "api") return s.cap >= 58 ? "niche" : "crushed";
+  return "meh";
+}
+
+// applies option i of this month's event; fills g.out with the outcome text and per-stat deltas
+function choose(g, i, rnd = Math.random) {
+  const ev = EVENTS[g.cur], opt = ev.o[i], s = g.s;
+  const r = resolve(opt, s, rnd);
+  const before = { cap: s.cap, bench: bench(s), align: s.align, boss: s.boss, gpu: s.gpu, hype: s.hype };
+  const fx = { ...(r.fx || {}) };
+  if (g.month > 1) fx.boss = (fx.boss || 0) - DECAY;
+  if (g.month < MONTHS) for (const k in TRAIN) fx[k] = (fx[k] || 0) + TRAIN[k];
+  for (const k in fx) s[k] += fx[k];
+  for (const k of ["cap", "water", "align", "boss", "hype"]) s[k] = clamp(s[k], 0, 100);
+  const f = r.f || {};
+  for (const k in f) s.f[k] = typeof f[k] === "number" ? (s.f[k] || 0) + f[k] : f[k];
+  if (opt.quit) s.f.quit = 1;
+  const after = { cap: s.cap, bench: bench(s), align: s.align, boss: s.boss, gpu: s.gpu, hype: s.hype };
+  const d = {};
+  for (const k in after) if (after[k] !== before[k]) d[k] = [before[k], after[k]];
+  const wobble = (((g.month * 7919) % 13) - 6) * 0.01;
+  g.used.push(ev.id);
+  g.log.push({ m: g.month, e: ev.id, o: i, loss: +(loss(s.cap) + wobble).toFixed(2), spike: !!ev.spike });
+  g.picked = i;
+  g.out = { t: r.t, roll: r.roll, d };
+  g.ending = early(s) || (g.month === MONTHS ? final(s) : null);
+}
+
+// moves to the next month; returns false when the run is over
+function advance(g, rnd = Math.random) {
+  if (g.ending) return false;
+  g.month += 1;
+  g.cur = drawEvent(g, rnd);
+  g.picked = null;
+  g.out = null;
+  return true;
+}
+/* DATA-END */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const KEY = "lab-run-v1";
+const HIST_KEY = "lab-history-v1";
+const SOUND_KEY = "lab-sound";
+// the sibling quiz game, linked from the ending page
+const QUIZ_URL = "https://your-llm-param.yanjieze.com/";
+const GAME_URL = "https://llm-alchemy.yanjieze.com/";
+// anonymous play stats (same endpoint style as the your-llm-param quiz). Empty string turns reporting off.
+const API = "";
+const VISITOR_KEY = "jib-llm-visitor";
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+const pad = n => String(n).padStart(2, "0");
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const KEYS = "ABCD";
+const STAT_NAMES = { cap: "真实能力", bench: "跑分", align: "对齐", boss: "老板耐心", gpu: "算力", hype: "粉丝" };
+const TONES = { good: "好结局", odd: "离谱结局", bad: "坏结局" };
+
+/* ---------- sound: a small Web Audio synth, no audio files ---------- */
+const Sound = (() => {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  let ctx = null, master, music, sfx, wet, echo, noise;
+  let on = true, playing = false, timer = null, step = 0, nextT = 0, mood = 0;
+  try { on = localStorage.getItem(SOUND_KEY) !== "off"; } catch (e) {}
+  const S = 60 / 96 / 4; // one 16th note at 96 BPM
+  // A minor, i–VI–iv–V (Am F Dm E); the E major chord gives the loop its "alchemy" colour
+  const CHORDS = [[57, 60, 64], [53, 57, 60], [50, 53, 57], [52, 56, 59]];
+  const ARP = [0, 1, 2, 1, 2, 0, 1, 2];
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+  const gain = (v, to) => { const g = ctx.createGain(); g.gain.value = v; if (to) g.connect(to); return g; };
+
+  function init() {
+    if (ctx || !AC) return ctx;
+    ctx = new AC();
+    const comp = ctx.createDynamicsCompressor();
+    comp.connect(ctx.destination);
+    master = gain(0.9, comp);
+    music = gain(0, master);
+    sfx = gain(0.55, master);
+    // reverb: a decaying noise impulse
+    const len = Math.floor(ctx.sampleRate * 2.2), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = ir.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    }
+    const verb = ctx.createConvolver();
+    verb.buffer = ir;
+    wet = gain(1);
+    wet.connect(verb);
+    verb.connect(gain(0.3, master));
+    // dotted-8th echo for the arpeggio
+    echo = ctx.createDelay(1);
+    echo.delayTime.value = S * 3;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.value = 2200;
+    echo.connect(lp); lp.connect(gain(0.3, echo)); lp.connect(music);
+    noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const nd = noise.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    return ctx;
+  }
+
+  function voice({ type = "sine", f, f2, t, dur, vol = 0.1, a = 0.005, cut, q, to = [sfx] }) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let n = o;
+    if (cut) {
+      const b = ctx.createBiquadFilter();
+      b.type = "lowpass"; b.frequency.value = cut; if (q) b.Q.value = q;
+      o.connect(b); n = b;
+    }
+    n.connect(g);
+    to.forEach(d => g.connect(d));
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+  function hiss({ t, dur, vol = 0.05, type = "highpass", f = 7000, f2, q = 0.8, to = [sfx] }) {
+    const src = ctx.createBufferSource(), b = ctx.createBiquadFilter(), g = ctx.createGain();
+    src.buffer = noise;
+    b.type = type; b.frequency.setValueAtTime(f, t); b.Q.value = q;
+    if (f2) b.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(b); b.connect(g);
+    to.forEach(d => g.connect(d));
+    src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+  }
+  function chordPad(chord, t, dur) {
+    chord.forEach(m => [-8, 8].forEach(det => {
+      const o = ctx.createOscillator(), b = ctx.createBiquadFilter(), g = ctx.createGain();
+      o.type = "sawtooth"; o.frequency.value = hz(m); o.detune.value = det;
+      b.type = "lowpass"; b.frequency.value = mood ? 1500 : 750; b.Q.value = 2;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.02, t + 0.5);
+      g.gain.setValueAtTime(0.02, t + dur - 0.4);
+      g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      o.connect(b); b.connect(g); g.connect(music); g.connect(wet);
+      o.start(t); o.stop(t + dur + 0.05);
+    }));
+  }
+
+  // one 16th-note step of a 4-bar loop; "mood" 1 adds a four-on-the-floor kick, claps and 16th hats
+  function playStep(i, t) {
+    const s = i % 16, ch = CHORDS[Math.floor(i / 16) % 4];
+    if (s === 0) chordPad(ch, t, S * 16);
+    if (mood || s % 2 === 0) {
+      const m = ch[ARP[s % 8]] + 12 + (s % 8 >= 6 ? 12 : 0);
+      voice({ type: "triangle", f: hz(m), t, dur: 0.22, vol: mood ? 0.035 : 0.045, to: [music, echo] });
+    }
+    if ([0, 6, 8, 14].includes(s) || (mood && (s === 3 || s === 11)))
+      voice({ type: "triangle", f: hz(ch[0] - 24), t, dur: 0.32, vol: 0.2, cut: 500, to: [music] });
+    if (s === 0 || s === 8 || (mood && (s === 4 || s === 12)))
+      voice({ f: 150, f2: 42, t, dur: 0.24, vol: 0.5, a: 0.002, to: [music] });
+    if (s % 4 === 2) hiss({ t, dur: 0.05, vol: 0.05, to: [music] });
+    else if (mood && s % 2 === 1) hiss({ t, dur: 0.03, vol: 0.025, to: [music] });
+    if (mood && (s === 4 || s === 12)) hiss({ t, dur: 0.14, vol: 0.09, type: "bandpass", f: 1600, q: 1.2, to: [music, wet] });
+  }
+  function tick() {
+    while (nextT < ctx.currentTime + 0.15) { playStep(step, nextT); nextT += S; step = (step + 1) % 64; }
+  }
+
+  function paint() {
+    $$(".snd").forEach(b => {
+      b.classList.toggle("on", playing);
+      b.setAttribute("aria-pressed", String(playing));
+      b.setAttribute("aria-label", playing ? "关闭背景音乐" : "打开背景音乐");
+    });
+  }
+  function startMusic() {
+    if (!on || !init()) return;
+    ctx.resume();
+    if (!playing) {
+      playing = true;
+      step = 0;
+      nextT = ctx.currentTime + 0.08;
+      const t = ctx.currentTime;
+      music.gain.cancelScheduledValues(t);
+      music.gain.setValueAtTime(music.gain.value, t);
+      music.gain.linearRampToValueAtTime(0.32, t + 1.2);
+      timer = setInterval(tick, 25);
+      tick();
+    }
+    paint();
+  }
+  function stopMusic(fade = 0.6) {
+    if (ctx && playing) {
+      playing = false;
+      clearInterval(timer);
+      const t = ctx.currentTime;
+      music.gain.cancelScheduledValues(t);
+      music.gain.setValueAtTime(music.gain.value, t);
+      music.gain.linearRampToValueAtTime(0, t + fade);
+    }
+    paint();
+  }
+  // the speaker button: starts music if it is silent, otherwise mutes everything
+  function click() {
+    if (playing) { on = false; stopMusic(0.3); }
+    else { on = true; startMusic(); }
+    try { localStorage.setItem(SOUND_KEY, on ? "on" : "off"); } catch (e) {}
+    paint();
+  }
+
+  const notes = (list, t, opts) => list.forEach((m, i) => voice({ type: "triangle", f: hz(m), t: t + i * (opts.gap || 0.07), dur: opts.dur || 0.3, vol: opts.vol || 0.08, to: [sfx, wet] }));
+  function fx(name) {
+    if (!on || !name || !init()) return;
+    ctx.resume();
+    const t = ctx.currentTime + 0.01;
+    switch (name) {
+      case "select": voice({ type: "square", f: 520, f2: 780, t, dur: 0.08, vol: 0.05, cut: 2400 }); break;
+      case "next": voice({ f: 880, t, dur: 0.1, vol: 0.05 }); break;
+      case "tick": voice({ type: "square", f: 1400, t, dur: 0.025, vol: 0.03, cut: 4000 }); break;
+      case "result": notes([69, 76], t, { gap: 0.06, dur: 0.25, vol: 0.06 }); break;
+      case "win": notes([72, 76, 79, 84], t, {}); break;
+      case "lose":
+        voice({ type: "sawtooth", f: 330, f2: 196, t, dur: 0.22, vol: 0.08, cut: 1100 });
+        voice({ type: "sawtooth", f: 247, f2: 147, t: t + 0.22, dur: 0.4, vol: 0.08, cut: 900 });
+        break;
+      case "month":
+        hiss({ t, dur: 0.45, vol: 0.06, type: "bandpass", f: 300, f2: 3000, q: 1.5 });
+        voice({ f: 1320, t: t + 0.25, dur: 0.6, vol: 0.04, to: [sfx, wet] });
+        break;
+      case "alarm":
+        for (let i = 0; i < 4; i++) voice({ type: "square", f: i % 2 ? 660 : 880, t: t + i * 0.14, dur: 0.12, vol: 0.04, cut: 3000 });
+        break;
+      case "stamp":
+        voice({ f: 110, f2: 38, t, dur: 0.4, vol: 0.6, a: 0.002 });
+        hiss({ t, dur: 0.2, vol: 0.12, type: "lowpass", f: 900 });
+        break;
+      case "good":
+        notes([60, 64, 67, 72], t, { gap: 0.09, dur: 0.5 });
+        [72, 76, 79, 84].forEach(m => voice({ type: "sawtooth", f: hz(m), t: t + 0.4, dur: 1.8, vol: 0.035, a: 0.05, cut: 2400, to: [sfx, wet] }));
+        break;
+      case "odd":
+        for (let i = 0; i < 10; i++) voice({ type: "square", f: 200 + Math.random() * 1800, t: t + i * 0.045, dur: 0.04, vol: 0.04, cut: 5000 });
+        break;
+      case "bad":
+        [62, 61, 60].forEach((m, i) => voice({ type: "sawtooth", f: hz(m), t: t + i * 0.35, dur: 0.32, vol: 0.08, cut: 1000 }));
+        voice({ type: "sawtooth", f: hz(59), f2: hz(56), t: t + 1.05, dur: 1.2, vol: 0.08, cut: 900 });
+        break;
+      case "sparkle": notes([88, 91, 96], t, { gap: 0.06, dur: 0.25, vol: 0.05 }); break;
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!ctx) return;
+    if (document.hidden) ctx.suspend(); else if (on) ctx.resume();
+  });
+  return { startMusic, stopMusic, click, fx, paint, setMood: m => { mood = m ? 1 : 0; } };
+})();
+
+/* ---------- embers: rising sparks behind the page, plus a confetti burst ---------- */
+const Embers = (() => {
+  const cv = $("#fx"), cx = cv.getContext("2d");
+  const dm = matchMedia("(prefers-color-scheme: dark)");
+  let W = 0, H = 0, parts = [], heat = 0.5, raf = 0, col = {}, dark = false;
+  function theme() {
+    const cs = getComputedStyle(document.documentElement), v = k => cs.getPropertyValue(k).trim();
+    col = { accent: v("--accent"), gold: v("--gold"), good: v("--good"), odd: v("--odd"), water: v("--water") };
+    dark = dm.matches;
+  }
+  function size() {
+    const r = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * r; cv.height = H * r;
+    cx.setTransform(r, 0, 0, r, 0, 0);
+  }
+  const ember = () => ({ k: 0, x: Math.random() * W, y: H + 8, vx: (Math.random() - 0.5) * 0.25, vy: -(0.35 + Math.random() * 0.9),
+    r: 0.8 + Math.random() * 1.8, t: 0, life: 260 + Math.random() * 380, s: Math.random() * 100, c: Math.random() < 0.3 ? col.gold : col.accent });
+  function frame() {
+    cx.clearRect(0, 0, W, H);
+    let n = 0;
+    for (const p of parts) if (!p.k) n++;
+    if (n < 10 + heat * 40 && Math.random() < 0.25 + heat * 0.5) parts.push(ember());
+    parts = parts.filter(p => p.t < p.life && p.y < H + 40 && (p.k || p.y > -20));
+    for (const p of parts) {
+      p.t++;
+      if (!p.k) {
+        p.x += p.vx + Math.sin((p.t + p.s) / 28) * 0.35;
+        p.y += p.vy * (1 + heat * 0.6);
+        const a = Math.min(1, p.t / 40, (p.life - p.t) / 60) * (0.6 + 0.4 * Math.sin((p.t + p.s) * 0.3)) * (dark ? 0.9 : 0.5);
+        cx.fillStyle = p.c;
+        cx.globalAlpha = a * 0.22; cx.beginPath(); cx.arc(p.x, p.y, p.r * 3.4, 0, 7); cx.fill();
+        cx.globalAlpha = a; cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, 7); cx.fill();
+      } else {
+        p.vy += 0.12; p.vx *= 0.985; p.vy *= 0.995; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+        const flip = Math.abs(Math.cos(p.t * 0.12));
+        cx.globalAlpha = Math.min(1, (p.life - p.t) / 30);
+        cx.save(); cx.translate(p.x, p.y); cx.rotate(p.rot);
+        cx.fillStyle = p.c; cx.fillRect(-p.w / 2, -p.h * flip / 2, p.w, p.h * flip + 0.5);
+        cx.restore();
+      }
+    }
+    cx.globalAlpha = 1;
+    raf = requestAnimationFrame(frame);
+  }
+  function burst(n = 140) {
+    const c = [col.accent, col.gold, col.good, col.water, col.odd];
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.8, v = 3 + Math.random() * 6.5;
+      parts.push({ k: 1, x: W / 2, y: H * 0.45, vx: Math.cos(a) * v, vy: Math.sin(a) * v, w: 5 + Math.random() * 5, h: 8 + Math.random() * 6,
+        rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3, t: 0, life: 220 + Math.random() * 120, c: c[i % c.length] });
+    }
+  }
+  function start() { if (reduced || raf) return; theme(); size(); raf = requestAnimationFrame(frame); }
+  function stop() { cancelAnimationFrame(raf); raf = 0; }
+  addEventListener("resize", () => raf && size());
+  dm.addEventListener("change", theme);
+  document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
+  return { start, burst: n => { if (!reduced) burst(n); }, heat: h => { heat = h; } };
+})();
+
+/* ---------- small animation helpers ---------- */
+function countTo(el, from, to, fmt = String, dur = 750) {
+  const id = (el._tw || 0) + 1;
+  el._tw = id;
+  if (reduced || from == null || from === to) { el.textContent = fmt(to); return; }
+  const t0 = performance.now();
+  const step = now => {
+    if (el._tw !== id) return;
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = fmt(Math.round(from + (to - from) * e));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function floatDelta(host, d, text) {
+  if (reduced || !d) return;
+  const f = document.createElement("span");
+  f.className = "float " + (d > 0 ? "up" : "down");
+  f.textContent = text || (d > 0 ? "+" : "−") + Math.abs(d);
+  host.append(f);
+  f.addEventListener("animationend", () => f.remove());
+}
+function replay(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+function alarmFlash() {
+  if (reduced) return;
+  const a = document.createElement("div");
+  a.className = "alarm";
+  document.body.append(a);
+  a.addEventListener("animationend", () => a.remove());
+}
+
+/* ---------- state ---------- */
+let g = load();
+let busy = false;
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(g)); } catch (e) {} }
+function load() {
+  try {
+    const x = JSON.parse(localStorage.getItem(KEY) || "null");
+    return x && x.s && EVENTS[x.cur] ? x : null;
+  } catch (e) { return null; }
+}
+
+/* history: one entry per finished run, kept in this browser only */
+function loadHist() {
+  try { const h = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); return Array.isArray(h) ? h : []; }
+  catch (e) { return []; }
+}
+function saveHist(h) { try { localStorage.setItem(HIST_KEY, JSON.stringify(h)); } catch (e) {} }
+function record() {
+  const h = loadHist();
+  let entry = h.find(x => x.id === g.id);
+  if (!entry) {
+    const s = g.s;
+    entry = {
+      id: g.id, at: Date.now(), ending: g.ending, first: !h.some(x => x.ending === g.ending),
+      picks: g.log.map(x => `${x.e}:${x.o}`).join(","),
+      cap: s.cap, bench: bench(s), align: s.align, boss: s.boss, gpu: s.gpu, hype: s.hype,
+    };
+    h.push(entry);
+    saveHist(h);
+    report(h);
+  }
+  return { h, entry };
+}
+const unlocked = (h = loadHist()) => new Set(h.map(x => x.ending));
+
+/* anonymous stats: a random visitor id plus each run's choices and ending, nothing else */
+function visitorId() {
+  try {
+    let v = localStorage.getItem(VISITOR_KEY);
+    if (!v) {
+      v = Array.from(crypto.getRandomValues(new Uint8Array(10)), b => b.toString(16).padStart(2, "0")).join("");
+      localStorage.setItem(VISITOR_KEY, v);
+    }
+    return v;
+  } catch (e) { return null; }
+}
+// text/plain no-cors POST: no preflight; resolves true once the request reached the server
+function ping(path, data) {
+  if (!API) return Promise.resolve(false);
+  try {
+    return fetch(API + path, { method: "POST", body: JSON.stringify(data), mode: "no-cors", keepalive: true })
+      .then(() => true, () => false);
+  } catch (e) { return Promise.resolve(false); }
+}
+// sends every logged run not sent yet; the server ignores repeats, so sending twice is harmless
+async function report(h = loadHist()) {
+  const v = visitorId();
+  if (!v || !API) return;
+  const sent = [];
+  for (const [i, x] of h.entries()) {
+    if (x.sent) continue;
+    const { sent: _, first, ...run } = x;
+    if (await ping("/lab", { v, n: i + 1, ...run })) sent.push(x.id);
+  }
+  if (!sent.length) return;
+  const fresh = loadHist();
+  fresh.forEach(x => { if (sent.includes(x.id)) x.sent = true; });
+  saveHist(fresh);
+}
+
+/* ---------- loss curve: one point per month, with an extra peak half a month before a spike event ---------- */
+function curve(log, { draw = false, grow = false } = {}) {
+  const W = 300, H = 92, top = 6, bottom = 14, lo = 0.8, hi = 5.2;
+  const X = m => 4 + (m / MONTHS) * (W - 8);
+  const Y = l => top + (1 - (clamp(l, lo, hi) - lo) / (hi - lo)) * (H - top - bottom);
+  const pts = [[0, loss(START.cap) + 0.55]];
+  const peaks = [];
+  let cut = 0;
+  log.forEach((x, i) => {
+    if (i === log.length - 1) cut = pts.length - 1;
+    if (x.spike) { pts.push([x.m - 0.5, x.loss + 1.5]); peaks.push(pts.length - 1); }
+    pts.push([x.m, x.loss]);
+  });
+  const P = pts.map(([m, l]) => [X(m).toFixed(1), Y(l).toFixed(1)]);
+  const str = a => a.map(p => p.join(",")).join(" ");
+  const last = P[P.length - 1], base = (H - bottom).toFixed(1);
+  const area = `${P[0][0]},${base} ${str(P)} ${last[0]},${base}`;
+  const grid = [2, 3, 4].map(l => `<line class="grid" x1="4" x2="${W - 4}" y1="${Y(l).toFixed(1)}" y2="${Y(l).toFixed(1)}"/>`).join("");
+  const ticks = Array.from({ length: MONTHS + 1 }, (_, m) =>
+    `<line class="tick" x1="${X(m).toFixed(1)}" x2="${X(m).toFixed(1)}" y1="${H - bottom + 3}" y2="${H - bottom + (m % 3 ? 6 : 9)}"/>`).join("");
+  const growing = grow && log.length > 0;
+  const line = growing
+    ? `<polyline class="line" points="${str(P.slice(0, cut + 1))}"/><polyline class="line seg" points="${str(P.slice(cut))}" pathLength="1"/>`
+    : `<polyline class="line" points="${str(P)}" pathLength="1"/>`;
+  const spikes = peaks.map(i => `<circle class="spike${growing && i > cut ? " new" : ""}" cx="${P[i][0]}" cy="${P[i][1]}" r="3"/>`).join("");
+  const dot = draw ? "" : `<g class="halo-wrap"><circle class="halo" cx="${last[0]}" cy="${last[1]}" r="4"/><circle class="dot" cx="${last[0]}" cy="${last[1]}" r="4"/></g>`;
+  return `<svg class="curve${draw ? " draw" : ""}${growing ? " grow" : ""}" viewBox="0 0 ${W} ${H}" role="img" aria-label="训练 loss 曲线">
+    ${grid}${ticks}<polygon class="area" points="${area}"/>${line}${spikes}${dot}</svg>`;
+}
+
+const fans = h => Math.round(300 * Math.pow(1.09, h));
+const fmtFans = n => (n >= 10000 ? (n / 10000).toFixed(n >= 100000 ? 0 : 1) + "万" : String(n));
+const snapshot = () => ({ cap: g.s.cap, bench: bench(g.s), water: Math.min(g.s.water, 100 - g.s.cap), align: g.s.align, boss: g.s.boss, gpu: g.s.gpu, hype: g.s.hype });
+
+function show(id) {
+  ["cover", "play", "end"].forEach(s => { $("#" + s).hidden = s !== id; });
+  window.scrollTo(0, 0);
+}
+function setMood() {
+  const tense = !!g && !g.ending && (g.s.boss <= 20 || g.s.gpu < 150);
+  Sound.setMood(tense);
+  Embers.heat(tense ? 1 : 0.45);
+}
+
+/* ---------- cover ---------- */
+const SAMPLE = [[1, 2.86], [2, 2.7], [3, 2.62], [4, 2.41], [5, 2.33], [6, 2.2], [7, 2.24], [8, 1.98], [9, 1.9], [10, 1.72], [11, 1.69], [12, 1.55]]
+  .map(([m, l]) => ({ m, loss: l, spike: m === 7 }));
+function renderCover() {
+  $("#coverCurve").innerHTML = curve(SAMPLE, { draw: true });
+  const got = unlocked();
+  $("#collect").hidden = got.size === 0;
+  $("#collectN").textContent = got.size;
+  $("#pips").innerHTML = ENDING_IDS.map(id => `<i class="${got.has(id) ? "on" : ""}"></i>`).join("");
+  const r = $("#resume");
+  r.hidden = !(g && g.log.length > 0);
+  if (!r.hidden) r.textContent = g.ending ? `查看上一炉的结局（${ENDINGS[g.ending].name}）` : `继续上一炉（第 ${g.month} 个月）`;
+}
+
+async function newRun() {
+  if (busy) return;
+  busy = true;
+  Sound.startMusic();
+  g = { ...newGame(), id: newId() };
+  save();
+  await monthCard(1);
+  show("play");
+  renderPlay(true);
+  busy = false;
+}
+$("#start").addEventListener("click", newRun);
+$("#resume").addEventListener("click", () => {
+  Sound.startMusic();
+  if (g.ending) { show("end"); renderEnd(); return; }
+  show("play"); renderPlay(true);
+});
+$$(".snd").forEach(b => b.addEventListener("click", Sound.click));
+
+/* ---------- month card ---------- */
+function monthCard(m) {
+  if (reduced) return Promise.resolve();
+  const el = $("#monthCard");
+  $("#mcM").textContent = "M" + pad(m);
+  $("#mcT").textContent = m === 6 ? "中期汇报" : m === MONTHS ? "发布日" : `第 ${m} 个月`;
+  $("#mcS").textContent = m === MONTHS ? "最后一个月" : `距离发布还有 ${MONTHS - m} 个月`;
+  $("#mcBar").style.cssText = `--from:${(m - 1) / MONTHS};--to:${m / MONTHS}`;
+  el.hidden = false;
+  el.classList.remove("out");
+  replay(el, "in");
+  Sound.fx("month");
+  return new Promise(res => setTimeout(() => {
+    el.classList.add("out");
+    res(); // the next screen renders while the card fades out
+    setTimeout(() => { el.hidden = true; el.classList.remove("in", "out"); }, 280);
+  }, 950));
+}
+
+/* ---------- play ---------- */
+const STAT_ROWS = [["cap", "真实能力"], ["bench", "跑分"], ["align", "对齐"], ["boss", "老板耐心"]];
+$("#stats").innerHTML = STAT_ROWS.map(([k, name]) =>
+  `<div class="stat" data-k="${k}"><div class="stat-head"><span>${name}<em hidden>危险</em></span><b>0</b></div><div class="meter"><i class="base"></i>${k === "bench" ? '<i class="water"></i>' : ""}</div></div>`).join("");
+
+// repaints the header and dashboard; with `from`, numbers roll from the old values and deltas float up
+function paintDash(from) {
+  const s = g.s, v = snapshot();
+  $("#month").textContent = "M" + pad(g.month);
+  $("#months").innerHTML = Array.from({ length: MONTHS }, (_, i) =>
+    `<i class="${i + 1 < g.month || (i + 1 === g.month && g.picked != null) ? "done" : i + 1 === g.month ? "now" : ""}"></i>`).join("");
+  countTo($("#gpu"), from && from.gpu, v.gpu);
+  if (from) floatDelta($("#gpuBox"), v.gpu - from.gpu);
+  $("#gpuBox").classList.toggle("low", s.gpu < 150);
+  const lastLoss = g.log.length ? g.log[g.log.length - 1].loss : loss(START.cap) + 0.55;
+  $("#lossNow").textContent = lastLoss.toFixed(2);
+  countTo($("#fans"), from && fans(from.hype), fans(v.hype), fmtFans);
+  $("#curve").innerHTML = curve(g.log, { grow: !!from });
+  for (const [k] of STAT_ROWS) {
+    const el = $(`.stat[data-k="${k}"]`);
+    countTo(el.querySelector("b"), from && from[k], v[k]);
+    if (from) floatDelta(el, v[k] - from[k]);
+    el.querySelector(".base").style.width = (k === "bench" ? v.cap : v[k]) + "%";
+    if (k === "bench") el.querySelector(".water").style.width = v.water + "%";
+    const danger = k === "boss" && v.boss <= 20;
+    el.classList.toggle("danger", danger);
+    el.querySelector("em").hidden = !danger;
+  }
+}
+
+function chip(k, [a, b], i) {
+  if (k === "hype") {
+    const d = fans(b) - fans(a);
+    return `<li class="chip ${d > 0 ? "up" : "down"}" style="--i:${i}">粉丝<b>${d > 0 ? "+" : "−"}${fmtFans(Math.abs(d))}</b></li>`;
+  }
+  const d = b - a;
+  return `<li class="chip ${d > 0 ? "up" : "down"}" style="--i:${i}">${STAT_NAMES[k]}<b>${d > 0 ? "+" : "−"}${Math.abs(d)}</b></li>`;
+}
+
+function paintRoll(animate) {
+  const box = $("#rollBox"), o = g.out;
+  box.hidden = !(o && o.p != null);
+  if (box.hidden) return Promise.resolve();
+  box.className = "roll-box";
+  $("#rollZone").style.width = o.p * 100 + "%";
+  $("#rollP").textContent = `成功率 ${Math.round(o.p * 100)}%`;
+  const title = $("#rollTitle"), needle = $("#needle");
+  const finish = () => {
+    needle.style.left = o.at * 100 + "%";
+    box.classList.add(o.roll ? "ok" : "no");
+    title.textContent = o.roll ? "判定成功" : "判定失败";
+    title.className = "roll-verdict " + (o.roll ? "ok" : "no");
+  };
+  if (!animate || reduced) {
+    finish();
+    if (animate) Sound.fx(o.roll ? "win" : "lose");
+    return Promise.resolve();
+  }
+  title.textContent = "判定中……";
+  title.className = "";
+  box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  // the needle swings back and forth, slows down, and stops on the stored landing spot
+  return new Promise(res => {
+    const D = 1500, t0 = performance.now();
+    let side = 0;
+    const frame = now => {
+      const k = Math.min(1, (now - t0) / D), ph = Math.PI * 7 * (1 - Math.pow(1 - k, 2));
+      let x = Math.abs(o.at + Math.pow(1 - k, 1.6) * Math.sin(ph) * 0.9);
+      if (x > 1) x = 2 - x;
+      needle.style.left = clamp(x, 0, 1) * 100 + "%";
+      const sd = Math.sign(Math.cos(ph));
+      if (sd !== side) { side = sd; Sound.fx("tick"); }
+      if (k < 1) { requestAnimationFrame(frame); return; }
+      finish();
+      replay(box, o.roll ? "hit" : "miss");
+      Sound.fx(o.roll ? "win" : "lose");
+      setTimeout(res, 550);
+    };
+    requestAnimationFrame(frame);
+  });
+}
+
+function paintOutcome(animate) {
+  const out = $("#outcome"), done = g.picked != null;
+  out.hidden = !done;
+  out.classList.remove("in");
+  if (!done) return;
+  const roll = g.out.roll == null ? "" : `<span class="roll ${g.out.roll ? "ok" : "no"}">${g.out.roll ? "判定成功" : "判定失败"}</span>`;
+  $("#outT").innerHTML = roll + esc(g.out.t);
+  $("#chips").innerHTML = Object.entries(g.out.d).map(([k, v], i) => chip(k, v, i)).join("");
+  const auto = [];
+  if (g.month < MONTHS) auto.push(`能力 +${TRAIN.cap}`, `算力 −${-TRAIN.gpu}`);
+  if (g.month > 1) auto.push(`老板耐心 −${DECAY}`);
+  $("#auto").textContent = auto.length ? `已含每月自动变化：${auto.join(" · ")}` : "";
+  $("#next").innerHTML = g.ending ? `看结局<span class="mono">→</span>` : `下个月<span class="mono">→ M${pad(g.month + 1)}</span>`;
+  if (animate) {
+    void out.offsetWidth;
+    out.classList.add("in");
+    setTimeout(() => out.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" }), 120);
+  }
+}
+
+// intro: the event card types itself in and the options rise one by one
+function renderPlay(intro) {
+  paintDash();
+  setMood();
+  const ev = EVENTS[g.cur], done = g.picked != null, card = $("#event");
+  const tag = $("#tag");
+  tag.textContent = ev.tag;
+  tag.className = "tag" + (ev.hot ? " hot" : ev.key ? " key" : "");
+  const q = $("#qText");
+  let base = 0;
+  if (intro && !done && !reduced) {
+    const chars = [...ev.q], stepMs = Math.min(30, 700 / chars.length);
+    q.innerHTML = chars.map((c, i) => `<span class="c" style="--d:${Math.round(150 + i * stepMs)}ms">${esc(c)}</span>`).join("");
+    q.setAttribute("aria-label", ev.q);
+    base = Math.round(250 + chars.length * stepMs);
+  } else {
+    q.textContent = ev.q;
+    q.removeAttribute("aria-label");
+  }
+  $("#opts").style.setProperty("--base", base + "ms");
+  $("#opts").innerHTML = ev.o.map((o, i) =>
+    `<li style="--i:${i}"><button class="opt${done ? (i === g.picked ? " sel" : " dim") : ""}" type="button" data-i="${i}"${done ? " disabled" : ""}><span class="tok">${KEYS[i]}</span><span>${esc(o.o)}</span></button></li>`).join("");
+  card.classList.remove("in");
+  if (intro && !done) {
+    void card.offsetWidth;
+    card.classList.add("in");
+    if (ev.hot) {
+      setTimeout(() => { Sound.fx("alarm"); alarmFlash(); replay($("#dash"), "shake"); }, 200);
+    }
+  }
+  paintRoll(false);
+  paintOutcome(false);
+}
+
+async function pick(i) {
+  if (busy || g.picked != null) return;
+  busy = true;
+  const opt = EVENTS[g.cur].o[i], from = snapshot();
+  const p = opt.p == null ? null : typeof opt.p === "function" ? opt.p(g.s) : opt.p;
+  Sound.fx("select");
+  choose(g, i);
+  if (p != null) { g.out.p = p; g.out.at = g.out.roll ? Math.random() * p : p + Math.random() * (1 - p); }
+  save();
+  $$("#opts .opt").forEach((b, j) => {
+    b.disabled = true;
+    b.classList.add(j === i ? "sel" : "dim");
+    if (j === i) b.classList.add("picked");
+  });
+  await paintRoll(true);
+  if (p == null) Sound.fx("result");
+  paintDash(from);
+  paintOutcome(true);
+  setMood();
+  setTimeout(() => $("#next").focus({ preventScroll: true }), 400);
+  busy = false;
+}
+$("#opts").addEventListener("click", e => {
+  const btn = e.target.closest(".opt");
+  if (btn) pick(+btn.dataset.i);
+});
+
+$("#next").addEventListener("click", async () => {
+  if (busy) return;
+  busy = true;
+  Sound.fx("next");
+  if (!advance(g)) {
+    save();
+    await revealEnding();
+    busy = false;
+    return;
+  }
+  save();
+  await monthCard(g.month);
+  window.scrollTo(0, 0);
+  renderPlay(true);
+  busy = false;
+});
+
+/* ---------- ending ---------- */
+async function revealEnding() {
+  const id = g.ending, e = ENDINGS[id];
+  Sound.stopMusic(0.8);
+  setMood();
+  if (reduced) { show("end"); renderEnd(); return; }
+  const ov = $("#reveal"), name = $("#rvName"), tone = $("#rvTone");
+  $("#rvK").textContent = `训练结束 · 结局 No.${pad(ENDING_IDS.indexOf(id) + 1)}`;
+  name.textContent = e.name;
+  name.className = "rv-name " + e.tone;
+  tone.textContent = TONES[e.tone];
+  tone.className = "rv-tone tone " + e.tone;
+  ov.hidden = false;
+  ov.classList.remove("out", "thud");
+  replay(ov, "in");
+  $("#fx").classList.add("top"); // confetti flies over the veil
+  await sleep(e.tone === "bad" ? 1150 : 1000);
+  Sound.fx("stamp");
+  replay(ov, "thud");
+  if (e.tone === "good") { Embers.burst(150); Sound.fx("good"); }
+  else Sound.fx(e.tone);
+  // tap, Enter/Escape, or wait 5s
+  await new Promise(res => {
+    const done = () => {
+      clearTimeout(tm);
+      ov.removeEventListener("click", done);
+      document.removeEventListener("keydown", onKey);
+      res();
+    };
+    const onKey = ev => { if (ev.key === "Enter" || ev.key === "Escape" || ev.key === " ") done(); };
+    const tm = setTimeout(done, 5000);
+    setTimeout(() => { ov.addEventListener("click", done); document.addEventListener("keydown", onKey); }, 500);
+  });
+  ov.classList.add("out");
+  await sleep(260);
+  ov.hidden = true;
+  ov.classList.remove("in", "out", "thud");
+  $("#fx").classList.remove("top");
+  show("end");
+  renderEnd();
+}
+
+function shareText(id) {
+  const n = unlocked().size;
+  return `我在「炼丹模拟器」炼了 ${g.log.length} 个月，炼出了结局【${ENDINGS[id].name}】：${endingText(id, g.s)}\n已解锁 ${n}/16 个结局。你能炼出 SOTA 吗？\n${GAME_URL}`;
+}
+
+function renderEnd() {
+  const { h, entry } = record();
+  const id = g.ending, e = ENDINGS[id], s = g.s;
+  const got = unlocked(h);
+  const steps = g.log.map(x => {
+    const ev = EVENTS[x.e];
+    return `<li><span>M${pad(x.m)}</span><span><span class="ev">${esc(ev.tag)} · </span>${esc(ev.o[x.o].o)}</span></li>`;
+  }).join("");
+  $("#end").innerHTML = `
+    <div class="end-head rise">
+      <p class="eyebrow">结局 No.${pad(ENDING_IDS.indexOf(id) + 1)} · <span class="tone ${e.tone}">${TONES[e.tone]}</span></p>
+      <h1 class="end-name">${esc(e.name)}${entry.first ? '<span class="new">NEW</span>' : ""}</h1>
+    </div>
+    <p class="end-t rise" style="--d:120ms">${esc(endingText(id, s))}</p>
+
+    <section class="report rise" style="--d:240ms" aria-label="训练报告">
+      <h3>训练报告</h3>
+      ${curve(g.log, { draw: true })}
+      <table>
+        <tr><td>真实能力</td><td>${s.cap}</td></tr>
+        <tr><td>跑分</td><td>${bench(s)}${s.water ? `（水分 ${Math.min(s.water, 100 - s.cap)}）` : ""}</td></tr>
+        <tr><td>对齐</td><td>${s.align}</td></tr>
+        <tr><td>老板耐心</td><td>${s.boss}</td></tr>
+        <tr><td>剩余算力</td><td>${s.gpu} 卡·月</td></tr>
+        <tr><td>粉丝</td><td>${fmtFans(fans(s.hype))}</td></tr>
+      </table>
+      <ol class="steps">${steps}</ol>
+    </section>
+
+    <section class="collect rise" style="--d:360ms">
+      <div class="collect-head"><span>已解锁结局</span><span class="mono"><b>${got.size}</b> / 16</span></div>
+      <ul class="grid16">${ENDING_IDS.map(k => {
+        const has = got.has(k), en = ENDINGS[k];
+        return `<li class="${has ? en.tone : "locked"}${k === id ? " cur" : ""}${k === id && entry.first ? " fresh" : ""}"><i></i>${has ? esc(en.name) : "？？？"}</li>`;
+      }).join("")}</ul>
+    </section>
+
+    <div class="actions rise" style="--d:480ms">
+      <button class="btn primary shine" id="again" type="button">再炼一炉<span class="mono">还差 ${16 - got.size} 个结局</span></button>
+      <button class="btn ghost" id="copy" type="button">复制分享文案</button>
+      <textarea id="shareText" readonly hidden></textarea>
+      <p class="toast" id="toast" aria-live="polite"></p>
+      <a class="btn ghost" href="${QUIZ_URL}">去测测你是几 B 的 LLM</a>
+    </div>
+    <p class="fine">仅供娱乐。事件纯属虚构，如有雷同，说明你也在炼丹。</p>`;
+
+  if (entry.first) setTimeout(() => Sound.fx("sparkle"), 1000);
+  $("#again").addEventListener("click", newRun);
+  $("#copy").addEventListener("click", async () => {
+    const text = shareText(id), ta = $("#shareText");
+    try {
+      await navigator.clipboard.writeText(text);
+      $("#toast").textContent = "已复制，去粘贴给朋友吧。";
+    } catch (err) {
+      ta.hidden = false; ta.value = text; ta.focus(); ta.select();
+      $("#toast").textContent = "复制失败，请手动复制上面的文字。";
+    }
+  });
+}
+
+/* ---------- boot ---------- */
+Embers.start();
+Sound.paint();
+show("cover");
+renderCover();
+</script>
+</body>
+</html>
